@@ -7,7 +7,7 @@ public class Path : MonoBehaviour
     public Color lineColor;
     private List<Transform> nodes = new List<Transform>();
 
-    //draw in editor
+    //draw the path the vehicle follows in editor
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = lineColor;
@@ -22,7 +22,7 @@ public class Path : MonoBehaviour
                 nodes.Add(pathTransforms[i]);
             }
         }
-        for (int i = 1; i < nodes.Count; i++)
+        for (int i = 1; i < nodes.Count; i++) // draw sphere gizmos at each node
         {
             Vector3 currentNode = nodes[i].position;
             Vector3 previousNode = nodes[i - 1].position;

@@ -76,7 +76,7 @@ public class CarEngine : MonoBehaviour {
     public Vector3 centerOfMass;
 
 	void Start () {
-        priorityQue = new TreeBag<GameObject>(new ObstacleComparer(this.gameObject), C5.EqualityComparer<GameObject>.Default);
+        priorityQue = new TreeBag<GameObject>(new ObstacleComparer(this.gameObject), C5.EqualityComparer<GameObject>.Default);//define obstacle storage
 
         GetComponent<Rigidbody>().centerOfMass = centerOfMass;
         OldMaxSpeed = maxSpeed;// save max speed
@@ -99,7 +99,7 @@ public class CarEngine : MonoBehaviour {
         Sensors();
         ApplySteering();
         AutoDrive();
-        CheckClosesNodeDistance();
+        CheckClosestNodeDistance();
         Breaking();
     }
 
@@ -148,10 +148,11 @@ public class CarEngine : MonoBehaviour {
 
             wheelFrontLeft.steerAngle = Mathf.Lerp(wheelFrontLeft.steerAngle, steeringNew, Time.deltaTime * steeringLerpSteps);
             wheelFrontRight.steerAngle = Mathf.Lerp(wheelFrontRight.steerAngle, steeringNew, Time.deltaTime * steeringLerpSteps);
-            //StartCoroutine(WheelLerp());
+            //StartCoroutine(WheelLerp()); 
         }                    
     }
 
+    // no using coroutine currently as the steering becomes jerky
     // this coroutine run the lerp between the current vector and the vector of the next node in relation to wheel turning angle
     // it runs for lerpDuration seconds;
     //IEnumerator WheelLerp()
@@ -177,7 +178,7 @@ public class CarEngine : MonoBehaviour {
 
     // this function checks how close you are to the current waypoint and when that distance
     // is below a set value it will move the target to the next node
-    private void CheckClosesNodeDistance()
+    private void CheckClosestNodeDistance()
     {
         
         if (Vector3.Distance(transform.position, nodes[currentNodeIndex].position) < 1) // if we are very close increase nodeindex

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+//this class transforms the wheel models to match the wheelcoliders so you can see the wheels spinning and turning
 public class WheelMovement : MonoBehaviour
 {
     public WheelCollider targetWheel;
