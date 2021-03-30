@@ -44,15 +44,13 @@ public class CarEngine : MonoBehaviour {
     public Texture2D breakingTex;
     public Renderer carRenderer;
 
-    //statuses
-    public bool breaking = false;
-
     //turning
     [Header("Turning")]
     public float maxSteeringAngle = 45f;
     public float steeringLerpSteps = 0.5f;
     float steeringNew;
-    bool isTurning = false;
+    public float maxSpeedInCorner = 8f;
+    //bool isTurning = false;
     private bool activeAvoidance = false; // for sensors to turn away from obstacles
     
     //thrust/breaking
@@ -60,10 +58,18 @@ public class CarEngine : MonoBehaviour {
     public float motorToque = 50f;
     public float currentSpeed;
     public float maxSpeed = 30f;
-    private float OldMaxSpeed;
-    public float turningSpeed = 5f;
-    public float slowingDistanceToNode = 15f;
+    private float OldMaxSpeed;    
+    public float slowingDistanceToNode = 10f;
     public float maxBreakingTorque = 150f;
+    private float currentBreakingTorque = 150f;
+    public float minBreakingSpeed = 4f;
+    public float noSafeTurnDist = 0.5f;
+    public bool breaking = false;
+    public bool comeToStop = false;
+
+    //testing
+    public float currentSteerAngle;
+
 
     //sensors
     [Header("Sensors")]
@@ -97,11 +103,12 @@ public class CarEngine : MonoBehaviour {
     //method called 60 times per seconds
     private void FixedUpdate()
     {
+        currentSteerAngle = wheelFrontLeft.steerAngle;
+        Breaking();
         Sensors();
         ApplySteering();
         AutoDrive();
-        CheckClosestNodeDistance();
-        Breaking();
+        CheckClosestNodeDistance();        
     }
 
     // this function fires raycasts to detect Collisions with things tagged as obstacles
@@ -114,7 +121,40 @@ public class CarEngine : MonoBehaviour {
         Vector3 sensorStartPos = transform.position + frontSensorPos;
         sensorStartPos += transform.forward * frontSensorPos.x;
         sensorStartPos += transform.up * frontSensorPos.y;
-                  
+
+
+        //front center sensor only test if the other sensors arent acting or ar canceling each other out
+        if (avoidMultiplier == 0)
+        {
+            if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
+            {
+                if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+                {
+                    priorityQue.Add(hit.transform.gameObject);
+                    Debug.DrawLine(sensorStartPos, hit.point);
+                    activeAvoidance = true;
+                    breaking = true;
+                    currentBreakingTorque = 10 * currentSpeed / 2;
+                    if (hit.distance < noSafeTurnDist) // if too close to the front then max breaking applied
+                    {
+                        comeToStop = true;
+                    }
+                    else
+                    {
+                        comeToStop = false;
+                        if (hit.normal.x < 0) // if the obstacle is angled then turn towards the least steep angle to avoid
+                        {
+                            avoidMultiplier = -1;
+                        }
+                        else
+                        {
+                            avoidMultiplier = 1;
+                        }
+                    }
+                }
+            }
+        }
+
 
         //front right sensor
         sensorStartPos += transform.right * sensorSpacing;
@@ -126,6 +166,8 @@ public class CarEngine : MonoBehaviour {
                 Debug.DrawLine(sensorStartPos, hit.point);
                 activeAvoidance = true;
                 avoidMultiplier -= 1f;
+                breaking = true;
+                currentBreakingTorque = 10 * currentSpeed;
             }            
         }
         //front right angle sensor                                                               gives vector 3 of the direction
@@ -136,7 +178,9 @@ public class CarEngine : MonoBehaviour {
                 priorityQue.Add(hit.transform.gameObject);
                 Debug.DrawLine(sensorStartPos, hit.point);
                 activeAvoidance = true;
-                avoidMultiplier -= 0.5f;
+                avoidMultiplier -= 0.75f;
+                breaking = true;
+                currentBreakingTorque = 10 * currentSpeed / 2;
             }
         }
 
@@ -150,6 +194,8 @@ public class CarEngine : MonoBehaviour {
                 Debug.DrawLine(sensorStartPos, hit.point);
                 activeAvoidance = true;
                 avoidMultiplier += 1f;
+                breaking = true;
+                currentBreakingTorque = 10 * currentSpeed;                    
             }
         }
         //front left angle sensor
@@ -160,32 +206,11 @@ public class CarEngine : MonoBehaviour {
                 priorityQue.Add(hit.transform.gameObject);
                 Debug.DrawLine(sensorStartPos, hit.point);
                 activeAvoidance = true;
-                avoidMultiplier += 0.5f;
+                avoidMultiplier += 0.75f;
+                breaking = true;
+                currentBreakingTorque = 10 * currentSpeed / 2;             
             }
-        }
-
-        //front center sensor only test if the other sensors arent acting or ar canceling each other out
-        if (avoidMultiplier == 0)
-        {
-            if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
-            {
-                if (hit.transform.tag == "Obstacle") // only store obstacle type objects
-                {
-                    priorityQue.Add(hit.transform.gameObject);
-                    Debug.DrawLine(sensorStartPos, hit.point);
-                    activeAvoidance = true;
-                    if (hit.normal.x < 0) // if the obstacle is angled then turn towards the least steep angle to avoid
-                    {
-                        avoidMultiplier = -1;
-                    }
-                    else
-                    {
-                        avoidMultiplier = 1;
-                    }
-                    
-                }
-            }
-        }
+        }        
         
 
         if (activeAvoidance)
@@ -205,43 +230,18 @@ public class CarEngine : MonoBehaviour {
     //function applys steering forces
     private void ApplySteering()
     {
-        if (!isTurning && !activeAvoidance)
+        if (!activeAvoidance)
         {
             Vector3 reletiveVector = transform.InverseTransformPoint(nodes[currentNodeIndex].position);
-            //Debug.Log(reletiveVector);
             reletiveVector = reletiveVector / reletiveVector.magnitude; // clamp between -1 and 1
 
             steeringNew = (reletiveVector.x / reletiveVector.magnitude) * maxSteeringAngle; // define best steering angle towards the vector possible
 
             wheelFrontLeft.steerAngle = Mathf.Lerp(wheelFrontLeft.steerAngle, steeringNew, Time.deltaTime * steeringLerpSteps);
             wheelFrontRight.steerAngle = wheelFrontLeft.steerAngle; // both wheels align
-            //StartCoroutine(WheelLerp()); 
         }                    
     }
 
-    // not using coroutine currently as the steering becomes jerky
-    // this coroutine run the lerp between the current vector and the vector of the next node in relation to wheel turning angle
-    // it runs for lerpDuration seconds;
-    //IEnumerator WheelLerp()
-    //{
-    //    isTurning = true;
-    //    float timeElapsed = 0; // reset timer
-
-    //    // set wheel colliders to the found angle but turn smoothly using a lerp between the two vectors
-    //    while (timeElapsed < steeringLerpSteps)
-    //    {
-    //        //Debug.Log(steeringNew - wheelFrontLeft.steerAngle);
-    //        wheelFrontLeft.steerAngle = Mathf.Lerp(wheelFrontLeft.steerAngle, steeringNew, timeElapsed / steeringLerpSteps);
-    //        wheelFrontRight.steerAngle = Mathf.Lerp(wheelFrontRight.steerAngle, steeringNew, timeElapsed / steeringLerpSteps);
-
-    //        timeElapsed += Time.deltaTime; // timer count up
-
-    //        yield return null;
-    //    }
-    //    wheelFrontLeft.steerAngle = steeringNew;
-    //    wheelFrontRight.steerAngle = steeringNew;
-    //    isTurning = false;
-    //}
 
     // this function checks how close you are to the current waypoint and when that distance
     // is below a set value it will move the target to the next node
@@ -263,7 +263,7 @@ public class CarEngine : MonoBehaviour {
         //reduce speed if within slowingDistanceToNode from next node so that the turn can be made safely
         if (Vector3.Distance(transform.position, nodes[currentNodeIndex].position) < slowingDistanceToNode) 
         {
-            maxSpeed = turningSpeed; //slow
+            maxSpeed = maxSpeedInCorner; //slow
         }
         else
         {
@@ -291,17 +291,23 @@ public class CarEngine : MonoBehaviour {
     // to apply a breaking force to the rear wheels
     private void Breaking()
     {
-        if (breaking)
+        if (breaking && currentSpeed > minBreakingSpeed)
         {
             carRenderer.material.mainTexture = breakingTex;
-            wheelRearLeft.brakeTorque = maxBreakingTorque;
-            wheelRearRight.brakeTorque = maxBreakingTorque;
+            wheelRearLeft.brakeTorque = currentBreakingTorque;
+            wheelRearRight.brakeTorque = currentBreakingTorque;           
         }
         else
         {
+            breaking = false;
             carRenderer.material.mainTexture = notBreakingTex;
             wheelRearLeft.brakeTorque = 0;
             wheelRearRight.brakeTorque = 0;
+        }
+        if (comeToStop)
+        {
+            currentBreakingTorque = maxBreakingTorque;
+            breaking = false;
         }
     }
 }
