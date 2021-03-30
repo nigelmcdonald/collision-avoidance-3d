@@ -53,6 +53,7 @@ public class CarEngine : MonoBehaviour {
     public float steeringLerpSteps = 0.5f;
     float steeringNew;
     bool isTurning = false;
+    private bool activeAvoidance = false; // for sensors to turn away from obstacles
     
     //thrust/breaking
     [Header("Thust/Breaking")]
@@ -67,9 +68,9 @@ public class CarEngine : MonoBehaviour {
     //sensors
     [Header("Sensors")]
     public float sensorLength = 10f;
-    public float frontSensorPos = 0.5f;
-    public float sensorSpacing = 0.2f;
-    public int numberOfSensors = 5;
+    public Vector3 frontSensorPos = new Vector3(0.3f,0.07f, 0);
+    public float sensorSpacing = 0.35f;
+    public float frontAngleSensorDeg = 30f;
     TreeBag<GameObject> priorityQue;
 
     private Rigidbody rb;
@@ -103,34 +104,100 @@ public class CarEngine : MonoBehaviour {
         Breaking();
     }
 
-    // this function fires raycasts to detect Collisions
+    // this function fires raycasts to detect Collisions with things tagged as obstacles
+    // LIMITATION: limited sensor resolution leads to blind spots so would need to be improved to be used in the real world
     private void Sensors()
     {
+        float avoidMultiplier = 0; // add to this to increase the strength of turning
         RaycastHit hit;
-        RaycastHit hit2;
-        RaycastHit hit3;
 
-        Vector3 sensorStartPos = transform.position;
-        sensorStartPos.x += frontSensorPos;
+        Vector3 sensorStartPos = transform.position + frontSensorPos;
+        sensorStartPos += transform.forward * frontSensorPos.x;
+        sensorStartPos += transform.up * frontSensorPos.y;
+                  
 
+        //front right sensor
+        sensorStartPos += transform.right * sensorSpacing;
         if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
         {
-            priorityQue.Add(hit.transform.gameObject);
+            if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+            {
+                priorityQue.Add(hit.transform.gameObject);
+                Debug.DrawLine(sensorStartPos, hit.point);
+                activeAvoidance = true;
+                avoidMultiplier -= 1f;
+            }            
         }
-        if (Physics.Raycast(sensorStartPos - new Vector3(0, 0, sensorSpacing), transform.forward, out hit2, sensorLength)) // center sensors
+        //front right angle sensor                                                               gives vector 3 of the direction
+        else if (Physics.Raycast(sensorStartPos, Quaternion.AngleAxis(frontAngleSensorDeg, transform.up) * transform.forward, out hit, sensorLength)) // center sensors
         {
-            priorityQue.Add(hit.transform.gameObject);
-        }
-        if (Physics.Raycast(sensorStartPos + new Vector3(0, 0, -sensorSpacing), transform.forward, out hit3, sensorLength)) // center sensors
-        {
-            priorityQue.Add(hit.transform.gameObject);
+            if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+            {
+                priorityQue.Add(hit.transform.gameObject);
+                Debug.DrawLine(sensorStartPos, hit.point);
+                activeAvoidance = true;
+                avoidMultiplier -= 0.5f;
+            }
         }
 
-        priorityQue.Clear();// clear right after I have intereacted with Obstacle[0] to avoice ect.
+        //front left sensor                                                                     gives vector 3 of the direction
+        sensorStartPos -= transform.right * (sensorSpacing * 2);        
+        if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
+        {
+            if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+            {
+                priorityQue.Add(hit.transform.gameObject);
+                Debug.DrawLine(sensorStartPos, hit.point);
+                activeAvoidance = true;
+                avoidMultiplier += 1f;
+            }
+        }
+        //front left angle sensor
+        else if (Physics.Raycast(sensorStartPos, Quaternion.AngleAxis(-frontAngleSensorDeg, transform.up) * transform.forward, out hit, sensorLength)) // center sensors
+        {
+            if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+            {
+                priorityQue.Add(hit.transform.gameObject);
+                Debug.DrawLine(sensorStartPos, hit.point);
+                activeAvoidance = true;
+                avoidMultiplier += 0.5f;
+            }
+        }
 
-        Debug.DrawLine(sensorStartPos, transform.forward);
-        Debug.DrawLine(sensorStartPos - new Vector3(0, 0, sensorSpacing), transform.forward);
-        Debug.DrawLine(sensorStartPos - new Vector3(0, 0, -sensorSpacing), transform.forward);
+        //front center sensor only test if the other sensors arent acting or ar canceling each other out
+        if (avoidMultiplier == 0)
+        {
+            if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
+            {
+                if (hit.transform.tag == "Obstacle") // only store obstacle type objects
+                {
+                    priorityQue.Add(hit.transform.gameObject);
+                    Debug.DrawLine(sensorStartPos, hit.point);
+                    activeAvoidance = true;
+                    if (hit.normal.x < 0) // if the obstacle is angled then turn towards the least steep angle to avoid
+                    {
+                        avoidMultiplier = -1;
+                    }
+                    else
+                    {
+                        avoidMultiplier = 1;
+                    }
+                    
+                }
+            }
+        }
+        
+
+        if (activeAvoidance)
+        {
+            wheelFrontLeft.steerAngle = Mathf.Lerp(wheelFrontLeft.steerAngle, maxSteeringAngle * avoidMultiplier, Time.deltaTime * steeringLerpSteps);
+            wheelFrontRight.steerAngle = wheelFrontLeft.steerAngle; // both wheels align
+            activeAvoidance = false;
+        };
+
+
+        priorityQue.Clear();// clear right after I have intereacted with Obstacle[0] to avoice ect.        
+        
     }
 
     
@@ -138,7 +205,7 @@ public class CarEngine : MonoBehaviour {
     //function applys steering forces
     private void ApplySteering()
     {
-        if (!isTurning)
+        if (!isTurning && !activeAvoidance)
         {
             Vector3 reletiveVector = transform.InverseTransformPoint(nodes[currentNodeIndex].position);
             //Debug.Log(reletiveVector);
@@ -147,12 +214,12 @@ public class CarEngine : MonoBehaviour {
             steeringNew = (reletiveVector.x / reletiveVector.magnitude) * maxSteeringAngle; // define best steering angle towards the vector possible
 
             wheelFrontLeft.steerAngle = Mathf.Lerp(wheelFrontLeft.steerAngle, steeringNew, Time.deltaTime * steeringLerpSteps);
-            wheelFrontRight.steerAngle = Mathf.Lerp(wheelFrontRight.steerAngle, steeringNew, Time.deltaTime * steeringLerpSteps);
+            wheelFrontRight.steerAngle = wheelFrontLeft.steerAngle; // both wheels align
             //StartCoroutine(WheelLerp()); 
         }                    
     }
 
-    // no using coroutine currently as the steering becomes jerky
+    // not using coroutine currently as the steering becomes jerky
     // this coroutine run the lerp between the current vector and the vector of the next node in relation to wheel turning angle
     // it runs for lerpDuration seconds;
     //IEnumerator WheelLerp()
