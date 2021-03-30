@@ -31,7 +31,7 @@ class ObstacleComparer : IComparer<GameObject>
 
 public class CarEngine : MonoBehaviour {
 
-    //refs
+    //references
     [Header("References")]
     public Transform path;
     private List<Transform> nodes;
