@@ -17,6 +17,8 @@ public class CarEngine : MonoBehaviour {
     public Texture2D notBreakingTex;
     public Texture2D breakingTex;
     public Renderer carRenderer;
+    private Rigidbody rb;
+    public Vector3 centerOfMass; // change to help stabalise the vehicle
 
     //turning
     [Header("Turning")]
@@ -50,18 +52,18 @@ public class CarEngine : MonoBehaviour {
     public float frontAngleSensorDeg = 30f;
     private float avoidMultiplier = 0f;
 
-    private Rigidbody rb;
-    public Vector3 centerOfMass; // change to help stabalise the vehicle
-
-	void Start () {        
+    //this function sets up all the values  and references that are required at run time, this happens one time in the beginning
+    private void Start () {        
         GetComponent<Rigidbody>().centerOfMass = centerOfMass; // adjust center of mass for stability
         oldPos = transform.position; // for calculating speed when compared against transform.pos each frame
         OldMaxSpeed = CurrentAllowedSpeed;// save max speed
         rb = GetComponent<Rigidbody>();
-        Transform[] pathTransforms = path.GetComponentsInChildren<Transform>();// find all the path nodes
-        nodes = new List<Transform>();
-        //copy over transforms that arent the parents, only the nodes
-        for (int i = 0; i < pathTransforms.Length; i++)
+
+        // find all the path nodes
+        //copy over transforms that arent the parent, only the nodes
+        Transform[] pathTransforms = path.GetComponentsInChildren<Transform>();
+        nodes = new List<Transform>();        
+        for (int i = 0; i < pathTransforms.Length; i++)//loop through the nodes
         {
             if (pathTransforms[i] != path.transform)
             {
@@ -71,6 +73,7 @@ public class CarEngine : MonoBehaviour {
     }
 
     //method called 50 times per seconds
+    //this function loops untill programe is paused or stoped
     private void FixedUpdate()
     {
         sensorLength = 3f + currentSpeed; // adjust sensor responce based on current speed, min length of 3        
@@ -84,7 +87,10 @@ public class CarEngine : MonoBehaviour {
     }
 
     // this function fires raycasts to detect Collisions with things tagged as obstacles
-    // this function modifies the allowable speed based on the conditions
+    // this function defines an avoidance multiplier that is used to determine how much steering is needed to avoid a target
+    // when it is determined avoidance should be done over breaking.
+    // this function fires 5 rays representing middle right, right angled, left and left angled
+    // this function modifies the safe driving speed CurrentAllowedSpeed which the Drive() and Breaking() function aims to meet
     // LIMITATION: limited sensor resolution leads to blind spots so would need to be improved to be used in the real world
     private void Sensors()
     {
@@ -95,7 +101,7 @@ public class CarEngine : MonoBehaviour {
         sensorStartPos += transform.forward * frontSensorPos.x;
         sensorStartPos += transform.up * frontSensorPos.y;
 
-        //front center sensor
+        //front center sensor, this sensor takes priority
         if (avoidMultiplier == 0)
         {
             if (Physics.Raycast(sensorStartPos, transform.forward, out hit, sensorLength)) // center sensors
@@ -103,11 +109,11 @@ public class CarEngine : MonoBehaviour {
                 if (hit.transform.tag == "Obstacle") // only store obstacle type objects
                 {                    
                     Debug.DrawLine(sensorStartPos, hit.point);                    
-                    if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if too close to the front then max breaking applied
+                    if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
                     {
                         comeToStop = false;
                         activeAvoidance = true;                        
-                        if (hit.normal.x < 0) // if the obstacle is angled then turn towards the least steep angle to avoid
+                        if (hit.normal.x < 0) // determine the direction to turn based on the normal compared to the ray hit direction
                         {
                             avoidMultiplier = -1;
                         }
@@ -121,7 +127,7 @@ public class CarEngine : MonoBehaviour {
                         CurrentAllowedSpeed = 0f;
                         comeToStop = true;                     
                     }
-                    if (currentSpeed < 5)
+                    if (currentSpeed < 5) // if inside safe stopping distance then breaking can still be applied if below a given speed as intant stopping is possible
                     {
                         CurrentAllowedSpeed = 0f;
                         comeToStop = true;
@@ -138,7 +144,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if too close to the front then max breaking applied
+                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
                 {
                     activeAvoidance = true;
                     comeToStop = false;
@@ -149,7 +155,7 @@ public class CarEngine : MonoBehaviour {
                     comeToStop = true;
                     CurrentAllowedSpeed = 0f;
                 }
-                if (currentSpeed < 5)
+                if (currentSpeed < 5) // if inside safe stopping distance then breaking can still be applied if below a given speed as intant stopping is possible
                 {
                     CurrentAllowedSpeed = 0f;
                     comeToStop = true;
@@ -175,7 +181,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if too close to the front then max breaking applied
+                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
                 {
                     comeToStop = false;
                     activeAvoidance = true;
@@ -186,7 +192,7 @@ public class CarEngine : MonoBehaviour {
                     CurrentAllowedSpeed = 0f;
                     comeToStop = true;
                 }
-                if (currentSpeed < 5)
+                if (currentSpeed < 5) // if inside safe stopping distance then breaking can still be applied if below a given speed as intant stopping is possible
                 {
                     CurrentAllowedSpeed = 0f;
                     comeToStop = true;
@@ -205,7 +211,7 @@ public class CarEngine : MonoBehaviour {
             }
         }
 
-        if (hit.transform == null)
+        if (hit.transform == null) // if nothing is being hit my a ray then stopping is no longer required
         {
             comeToStop = false;
         }
@@ -221,9 +227,16 @@ public class CarEngine : MonoBehaviour {
     }
 
     //function applys steering forces
+    // this function calls the CalculateNewTurnVect() function to determin a vector towards its desired direction and then 
+    // applies a Lerp between its current wheel angle and the new desired one in steeringNew
+    // this function drives towards the current node as determined by the CheckClosestNodeDistance() function
+    // activeAvoidance takes precence over this function as its more important to avoid obstacles than head towards our original destination
+    // LIMITATION:
+    // this function is our approximation of lane keeping in that the nodes represent ist understanding of where the road is, however we are not calculating
+    // the nodes dynamically for this project
     private void ApplySteering()
     {
-        if (!activeAvoidance)
+        if (!activeAvoidance) // if not currnetly avoiding an obstacle
         {
             reletiveVector = transform.InverseTransformPoint(nodes[currentNodeIndex].position);
             reletiveVector = reletiveVector / reletiveVector.magnitude; // clamp between -1 and 1  
@@ -242,7 +255,7 @@ public class CarEngine : MonoBehaviour {
 
 
     // this function checks how close you are to the current waypoint and when that distance
-    // is below a set value it will move the target to the next node
+    // is below a set value it will move its target vector to the next node and when it reaches the last node it starts again from node[0]
     private void CheckClosestNodeDistance()
     {        
         if (Vector3.Distance(transform.position, nodes[currentNodeIndex].position) < 1) // if we are very close increase nodeindex
@@ -268,10 +281,11 @@ public class CarEngine : MonoBehaviour {
         }
     }
 
-    // this funciton applies torque to the wheels on if the current speed < max speed
+    // this funciton applies torque to the wheels on if the current speed < current allowed speed as determined by the Sensor() function and
+    // distance from a corner. this function will also only work if the comeToStop bool has not been triggered
     private void AutoDrive()
     {
-        currentSpeed = Vector3.Distance(oldPos, transform.position) * 100; // calculate speed comparing the distance traveled in 1/60th of a second
+        currentSpeed = Vector3.Distance(oldPos, transform.position) * 100; // calculate speed comparing the distance traveled in 1/50th of a second
         oldPos = transform.position; // update old position 
         if (currentSpeed < CurrentAllowedSpeed && !comeToStop)
         {
@@ -287,7 +301,7 @@ public class CarEngine : MonoBehaviour {
 
     // this funtion handles changing the texture of the car to show a break light and also
     // to apply a breaking force to the rear wheels
-    // breaking occurs if over allowed speed
+    // breaking occurs if over allowed speed 
     private void Breaking()
     {
         if (comeToStop)
