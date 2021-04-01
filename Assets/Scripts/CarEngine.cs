@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Collections;
 
-
+// Reference: free models and basic code concept https://www.youtube.com/watch?v=o1XOUkYUDZU
 public class CarEngine : MonoBehaviour {
 
     //references
@@ -45,12 +45,12 @@ public class CarEngine : MonoBehaviour {
 
     //sensors
     [Header("Sensors")]
-    private Vector3 oldPos;
-    public float sensorLength = 10f;
+    public float sensorLength = 10f;     
     public Vector3 frontSensorPos = new Vector3(0.3f,0.07f, 0);
     public float sensorSpacing = 0.35f;
     public float frontAngleSensorDeg = 30f;
     private float avoidMultiplier = 0f;
+    private Vector3 oldPos;
 
     //this function sets up all the values  and references that are required at run time, this happens one time in the beginning
     private void Start () {        
@@ -82,7 +82,7 @@ public class CarEngine : MonoBehaviour {
         CheckClosestNodeDistance();
         Sensors();
         Breaking();        
-        ApplySteering();
+        LaneKeeping();
         AutoDrive();               
     }
 
@@ -93,7 +93,7 @@ public class CarEngine : MonoBehaviour {
     // this function modifies the safe driving speed CurrentAllowedSpeed which the Drive() and Breaking() function aims to meet
     // LIMITATION: limited sensor resolution leads to blind spots so would need to be improved to be used in the real world
     private void Sensors()
-    {
+    {        
         avoidMultiplier = 0; // add to this to increase the strength of turning
         RaycastHit hit;
 
@@ -115,11 +115,11 @@ public class CarEngine : MonoBehaviour {
                         activeAvoidance = true;                        
                         if (hit.normal.x < 0) // determine the direction to turn based on the normal compared to the ray hit direction
                         {
-                            avoidMultiplier = -1;
+                            avoidMultiplier = -1; //Member of a strong left turning
                         }
                         else
                         {
-                            avoidMultiplier = 1;
+                            avoidMultiplier = 1; //Member of a little left turning
                         }
                     }
                     else
@@ -148,7 +148,7 @@ public class CarEngine : MonoBehaviour {
                 {
                     activeAvoidance = true;
                     comeToStop = false;
-                    avoidMultiplier -= 1f;
+                    avoidMultiplier -= 1f; //Member of a strong left turning
                 }
                 else
                 {
@@ -168,9 +168,12 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                comeToStop = false;
-                activeAvoidance = true;                
-                avoidMultiplier -= 0.75f;
+                if (hit.distance < MinSafeBrakeDist / 2 && currentSpeed > 5)
+                {
+                    comeToStop = false;
+                    activeAvoidance = true;
+                    avoidMultiplier -= 0.75f; //Member of a little left turning
+                }                
             }
         }
 
@@ -185,7 +188,7 @@ public class CarEngine : MonoBehaviour {
                 {
                     comeToStop = false;
                     activeAvoidance = true;
-                    avoidMultiplier += 1f;
+                    avoidMultiplier += 1f; //Member of a strong right turning
                 }
                 else
                 {
@@ -205,9 +208,12 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                comeToStop = false;
-                activeAvoidance = true;
-                avoidMultiplier += 0.75f;           
+                if (hit.distance < MinSafeBrakeDist / 2 && currentSpeed > 5)
+                {
+                    comeToStop = false;
+                    activeAvoidance = true;
+                    avoidMultiplier += 0.75f; //Member of a little right turning
+                }                          
             }
         }
 
@@ -215,9 +221,9 @@ public class CarEngine : MonoBehaviour {
         {
             comeToStop = false;
         }
-        
-             
-        
+        Debug.Log("Dist to Obstacle: " + (hit.distance));
+        Debug.Log("Avoidance Value: " + Mathf.Clamp01((MinSafeBrakeDist / hit.distance)/2)); //ref: https://answers.unity.com/questions/275638/how-to-normalize-a-value-to-a-range-between-0-and.html
+
     }
 
     // define best steering angle towards the vector possible
@@ -234,7 +240,7 @@ public class CarEngine : MonoBehaviour {
     // LIMITATION:
     // this function is our approximation of lane keeping in that the nodes represent ist understanding of where the road is, however we are not calculating
     // the nodes dynamically for this project
-    private void ApplySteering()
+    private void LaneKeeping()
     {
         if (!activeAvoidance) // if not currnetly avoiding an obstacle
         {
