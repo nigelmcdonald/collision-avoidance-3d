@@ -79,7 +79,7 @@ public class CarEngine : MonoBehaviour {
     {
         sensorLength = 3f + currentSpeed; // adjust sensor responce based on current speed, min length of 3        
         MinSafeBrakeDist = currentSpeed / 2.5f; // min safe stopping distance depends on current speed
-        //ActualBreakTorque = wheelRearLeft.brakeTorque; // debugging
+        ActualBreakTorque = wheelRearLeft.brakeTorque; // debugging
         CheckClosestNodeDistance();
         Sensors();
         Breaking();        
