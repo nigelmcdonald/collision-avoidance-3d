@@ -6,9 +6,9 @@ PhysicMaterial:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: BlackTop
-  dynamicFriction: 0.7
-  staticFriction: 0.85
+  m_Name: Water
+  dynamicFriction: 0.2
+  staticFriction: 0.5
   bounciness: 0.05
   frictionCombine: 0
   bounceCombine: 0

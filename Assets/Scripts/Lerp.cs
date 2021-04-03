@@ -17,7 +17,7 @@ public class Lerp : MonoBehaviour
 
     private void Start()
     {
-        transform.localScale = new Vector3(1, 1, Random.Range(1f, 4f));// random length of the obstacle
+        transform.localScale = new Vector3(1, 1, Random.Range(0.5f, 4f));// random length of the obstacle
         travelDistance = Random.Range(8f, 15f); // this is randomise the timing of the obstacles each time the program is run
         LerpDuration = Random.Range(3f, 12f); // as above for travel speed
 

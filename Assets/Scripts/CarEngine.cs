@@ -38,10 +38,11 @@ public class CarEngine : MonoBehaviour {
     private float OldMaxSpeed;    
     public float slowingDistanceToNode = 10f;
     public float maxBreakingTorque = 150f;
-    public float currentBreakingTorque = 150f;
+    public float currentBreakingTorque;
     public float ActualBreakTorque;
     public float MinSafeBrakeDist = 0.5f;
     public bool comeToStop = false;
+    public float frictionCoefitient;
 
     //sensors
     [Header("Sensors")]
@@ -82,7 +83,7 @@ public class CarEngine : MonoBehaviour {
         CheckClosestNodeDistance();
         Sensors();
         Breaking();        
-        LaneKeeping();
+        LaneKeepingAndAvoidance();
         AutoDrive();               
     }
 
@@ -99,7 +100,7 @@ public class CarEngine : MonoBehaviour {
 
         Vector3 sensorStartPos = transform.position + frontSensorPos;
         sensorStartPos += transform.forward * frontSensorPos.x;
-        sensorStartPos += transform.up * frontSensorPos.y;
+        sensorStartPos += transform.up * frontSensorPos.y;        
 
         //front center sensor, this sensor takes priority
         if (avoidMultiplier == 0)
@@ -109,7 +110,7 @@ public class CarEngine : MonoBehaviour {
                 if (hit.transform.tag == "Obstacle") // only store obstacle type objects
                 {                    
                     Debug.DrawLine(sensorStartPos, hit.point);                    
-                    if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
+                    if (hit.distance < MinSafeBrakeDist) // if withing minimum safe breaking dist then steering avoidance is applied instead
                     {
                         comeToStop = false;
                         activeAvoidance = true;                        
@@ -144,7 +145,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
+                if (hit.distance < MinSafeBrakeDist) // if withing minimum safe breaking dist then steering avoidance is applied instead
                 {
                     activeAvoidance = true;
                     comeToStop = false;
@@ -168,7 +169,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist / 2 && currentSpeed > 5)
+                if (hit.distance < MinSafeBrakeDist / 2)
                 {
                     comeToStop = false;
                     activeAvoidance = true;
@@ -184,7 +185,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist && currentSpeed > 5) // if withing minimum safe breaking dist then steering avoidance is applied instead
+                if (hit.distance < MinSafeBrakeDist) // if withing minimum safe breaking dist then steering avoidance is applied instead
                 {
                     comeToStop = false;
                     activeAvoidance = true;
@@ -208,7 +209,7 @@ public class CarEngine : MonoBehaviour {
             if (hit.transform.tag == "Obstacle") // only compare obstacle type objects
             {
                 Debug.DrawLine(sensorStartPos, hit.point);
-                if (hit.distance < MinSafeBrakeDist / 2 && currentSpeed > 5)
+                if (hit.distance < MinSafeBrakeDist / 2)
                 {
                     comeToStop = false;
                     activeAvoidance = true;
@@ -240,7 +241,7 @@ public class CarEngine : MonoBehaviour {
     // LIMITATION:
     // this function is our approximation of lane keeping in that the nodes represent ist understanding of where the road is, however we are not calculating
     // the nodes dynamically for this project
-    private void LaneKeeping()
+    private void LaneKeepingAndAvoidance()
     {
         if (!activeAvoidance) // if not currnetly avoiding an obstacle
         {
@@ -258,7 +259,6 @@ public class CarEngine : MonoBehaviour {
             activeAvoidance = false;
         }       
     }
-
 
     // this function checks how close you are to the current waypoint and when that distance
     // is below a set value it will move its target vector to the next node and when it reaches the last node it starts again from node[0]
@@ -310,16 +310,30 @@ public class CarEngine : MonoBehaviour {
     // breaking occurs if over allowed speed 
     private void Breaking()
     {
-        if (comeToStop)
+        RaycastHit hit;
+        //ground friction sensor
+        if (Physics.Raycast(transform.position, -transform.up, out hit, sensorLength)) // shoot ray down
         {
-            currentBreakingTorque = maxBreakingTorque;
+            if (hit.transform.tag == "Ground") // only check if hitting the ground
+            {
+                Debug.DrawLine(transform.position, hit.point);
+                if (hit.collider.material != null)
+                {
+                    frictionCoefitient = hit.collider.material.staticFriction;// check the friction of the ground
+                }
+            }
+        }
+        // adjust the current breaking force relaative to the current friction
+        currentBreakingTorque = maxBreakingTorque * frictionCoefitient; 
+        if (comeToStop)
+        {            
             wheelRearLeft.brakeTorque = currentBreakingTorque;
             wheelRearRight.brakeTorque = currentBreakingTorque;
             wheelFrontLeft.brakeTorque = currentBreakingTorque / 2; // reduce front wheel break force to prevent spinouts
             wheelFrontRight.brakeTorque = currentBreakingTorque / 2; 
         }
         else if (currentSpeed > CurrentAllowedSpeed)
-        {            
+        {
             wheelRearLeft.brakeTorque = currentBreakingTorque;
             wheelRearRight.brakeTorque = currentBreakingTorque;
             wheelFrontLeft.brakeTorque = currentBreakingTorque / 2; // reduce front wheel break force to prevent spinouts 
